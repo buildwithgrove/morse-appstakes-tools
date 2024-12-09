@@ -56,7 +56,8 @@ def get_pokt_balances(input_file, output_file, remote_cli_url):
 # Define the function for the --upstake workflow
 # TODO: add ability to EXECUTE the commands after generating them, either with flag or with additional prompt
 def upstake(input_file, output_file, remote_cli_url):
-    additional_stake = input("Enter the additional stake amount (uPOKT): ")
+    additional_stake = input("Enter the additional stake amount 🪙(uPOKT): ")
+    # TODO: ensure this value is an integer >= 1
 
     with open(input_file, 'r') as infile, open(output_file, 'w') as outfile:
         for line in infile:
@@ -96,18 +97,69 @@ def upstake(input_file, output_file, remote_cli_url):
             except Exception as e:
                 print(f"❌ Error generating commands for address {address}: {e}")
 
+# Function to restake
+# TODO: add ability to EXECUTE the commands after generating them, either with flag or with additional prompt
+def restake(input_file, output_file, remote_cli_url):
+    additional_stake = input("Enter the additional stake amount 🪙(uPOKT): ")
+    # TODO: ensure this value is an integer >= 1
+
+    new_chains = input("Enter the chains you would like to stake for (comma-separated, e.g., 0001,0002,0003...): ")
+    # TODO: parse the chains string to ensure it is less than 8 elements and only consists of 4 digit hex values in each element
+    
+    with open(input_file, 'r') as infile, open(output_file, 'w') as outfile:
+        for line in infile:
+            address = line.strip()
+            if not address:
+                continue
+            try:
+                # Run the pocket query command
+                result = subprocess.run(
+                    ['pocket', 'query', 'app', address, '--remoteCLIURL', remote_cli_url],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                output = result.stdout
+
+                # Extract the JSON part of the output
+                json_start = output.find('{')
+                json_end = output.rfind('}') + 1
+                if json_start == -1 or json_end == -1:
+                    raise ValueError(f"Invalid output for address {address}: {output}")
+
+                app_data = json.loads(output[json_start:json_end])
+
+                # Extract necessary fields
+                staked_tokens = int(app_data.get('staked_tokens', '0'))
+
+                # Calculate new stake amount
+                new_stake = staked_tokens + int(additional_stake)
+
+                # Write the restake command to the output file
+                outfile.write(
+                    f"pocket apps stake {address} {new_stake} {new_chains} mainnet 10000 --remoteCLIURL {remote_cli_url} --datadir {datadir} --pwd {password}\n"
+                )
+                print(f"✅ Generated restake command for {address} ")
+            except Exception as e:
+                print(f"❌ Error generating commands for address {address}: {e}")
+
 # Main function to parse arguments and execute workflows
 def main():
     parser = argparse.ArgumentParser(description="App Stakes Tool for Pocket Network Morse")
     parser.add_argument(
         '-u', '--upstake',
         action='store_true',
-        help='Execute the upstake workflow. For each application address in the input file: Print to the output file the commands to upstake each application stake by the amount provided.'
+        help='Execute the upstake workflow. For each application address in the input file: Print to the output file the commands to upstake each application by the amount provided.'
     )
     parser.add_argument(
         '-i', '--info',
         action='store_true',
         help='Execute the info workflow. For each application address in the input file: returns the address, balance, and the currently staked chain IDs.'
+    )
+    parser.add_argument(
+        '-r', '--restake',
+        action='store_true',
+        help='Execute the restake workflow. For each application address in the input file: Print to the output file the commands to restake each application for a set of chains by the amount provided.'
     )
 
     args = parser.parse_args()
@@ -118,6 +170,9 @@ def main():
     elif args.info:
         print("Executing the info workflow...")
         get_pokt_balances(input_file, output_file, remote_cli_url)
+    elif args.restake:  # Check for the restake flag
+        print("Executing restake workflow...")
+        restake(input_file, output_file, remote_cli_url)
     else:
         parser.print_help()
 
